@@ -59,4 +59,20 @@
 
 * long 和 double 类型字段不支持使用*进行模糊检索，可以使用数值范围进行检索，例如：`status>400 and status<500`。
 
+### 代码样例
+
+更多内容请查看单元测试用例
+```
+    ...
+    AbstractQueryParser<?> parser = QueryLanguageParsers.getParser(LanguageType.CQL, ParserType.ES);
+
+    @Test
+    public void testMatchAll() {
+        String expr = "*";
+        Object result = parser.parse(expr);
+        log.info("{}", result);
+    }
+    ...
+```
+
 ## SQL（规划中）
