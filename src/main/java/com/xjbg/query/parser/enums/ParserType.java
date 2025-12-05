@@ -9,6 +9,7 @@ import lombok.Getter;
 @Getter
 public enum ParserType {
     NOOP("noop"),
+    JDBC("jdbc"),
     ES("es");
     private final String type;
 

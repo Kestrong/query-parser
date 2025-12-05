@@ -4,14 +4,20 @@ import com.xjbg.query.parser.base.AbstractQueryParser;
 import com.xjbg.query.parser.base.QueryLanguageParsers;
 import com.xjbg.query.parser.enums.LanguageType;
 import com.xjbg.query.parser.enums.ParserType;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
  * @author kesc
  * @since 2024-02-02 10:50
  */
-public class EsCqlParserTest extends AbstractCqlParserTest {
-    AbstractQueryParser<?> parser = QueryLanguageParsers.getParser(LanguageType.CQL, ParserType.ES);
+public class CqlParserTest extends AbstractCqlParserTest {
+    private AbstractQueryParser<?> parser;
+
+    @Before
+    public void setUp() {
+        parser = QueryLanguageParsers.getParser(LanguageType.CQL, ParserType.ES);
+    }
 
     @Test
     public void testMatchAll() {

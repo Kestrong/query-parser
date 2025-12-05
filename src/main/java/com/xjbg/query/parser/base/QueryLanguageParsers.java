@@ -3,6 +3,7 @@ package com.xjbg.query.parser.base;
 import com.xjbg.query.parser.enums.LanguageType;
 import com.xjbg.query.parser.enums.ParserType;
 import com.xjbg.query.parser.es.EsCql2DslQueryParser;
+import com.xjbg.query.parser.jdbc.JdbcCql2SqlQueryParser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collections;
@@ -22,6 +23,7 @@ public class QueryLanguageParsers {
         register(new NoopCqlQueryParser());
         register(new NoopSqlQueryParser());
         register(new EsCql2DslQueryParser());
+        register(new JdbcCql2SqlQueryParser());
     }
 
     public static <T> void register(AbstractQueryParser<T> parser) {
