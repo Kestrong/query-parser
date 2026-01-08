@@ -10,7 +10,8 @@ import lombok.Getter;
 public enum ParserType {
     NOOP("noop"),
     JDBC("jdbc"),
-    ES("es");
+    ES7("es7"),
+    ES8("es8");
     private final String type;
 
     ParserType(String type) {

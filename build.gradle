@@ -95,7 +95,7 @@ dependencyManagement {
         dependency 'org.apache.commons:commons-lang3:3.13.0'
         dependency 'org.apache.commons:commons-collections4:4.4'
         dependency 'org.antlr:antlr4-runtime:4.13.1'
-//        dependency "org.elasticsearch:elasticsearch:8.15.0"
+        dependency "co.elastic.clients:elasticsearch-java:8.11.1"
         dependency "org.elasticsearch:elasticsearch:7.17.10"
         dependency group: 'junit', name: 'junit', version: '4.13'
         dependency 'org.slf4j:slf4j-api:1.7.36'
@@ -111,6 +111,7 @@ dependencies {
     implementation 'org.antlr:antlr4-runtime'
     implementation 'org.apache.commons:commons-lang3'
     implementation 'org.elasticsearch:elasticsearch'
+    implementation 'co.elastic.clients:elasticsearch-java'
 
     annotationProcessor 'org.projectlombok:lombok'
     compileOnly 'org.projectlombok:lombok'

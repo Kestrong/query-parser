@@ -16,7 +16,7 @@ public class CqlParserTest extends AbstractCqlParserTest {
 
     @Before
     public void setUp() {
-        parser = QueryLanguageParsers.getParser(LanguageType.CQL, ParserType.ES);
+        parser = QueryLanguageParsers.getParser(LanguageType.CQL, ParserType.ES7);
     }
 
     @Test

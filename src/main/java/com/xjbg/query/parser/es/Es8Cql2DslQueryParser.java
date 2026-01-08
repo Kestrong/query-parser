@@ -1,43 +1,46 @@
 package com.xjbg.query.parser.es;
 
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.json.JsonData;
 import com.xjbg.query.parser.antlr4.cql.CQLSearchLexer;
 import com.xjbg.query.parser.antlr4.cql.CQLSearchParser;
 import com.xjbg.query.parser.enums.LanguageType;
+import com.xjbg.query.parser.enums.ParserType;
 import com.xjbg.query.parser.utils.StringUtil;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * @author kesc
  * @since 2024-01-29 16:51
  */
-public class EsCql2DslQueryParser extends AbstractEsQueryParser {
+public class Es8Cql2DslQueryParser extends AbstractEsQueryParser {
+    private static final Logger log = LoggerFactory.getLogger(Es8Cql2DslQueryParser.class);
 
     @Override
-    public QueryBuilder parse(String expression) {
+    public Query parse(String expression) {
         //如果表达式为空或者*，则返回全部数据
         if (StringUtil.isBlank(expression) || StringUtil.STAR.equals(expression.trim())) {
-            return QueryBuilders.matchAllQuery();
+            return Query.of(q -> q.matchAll(m -> m));
         }
         CharStream stream = CharStreams.fromString(expression);
         CQLSearchLexer lexer = new CQLSearchLexer(stream);
         CQLSearchParser searchParser = new CQLSearchParser(new CommonTokenStream(lexer));
 
-        QueryBuilder queryBuilder = parseExpressionContext(searchParser.cql().expression());
-        log.debug("cql:{},dsl:{}", expression, queryBuilder);
-        return queryBuilder;
+        Query query = parseExpressionContext(searchParser.cql().expression());
+        log.debug("cql:{},dsl:{}", expression, query);
+        return query;
     }
 
-    private QueryBuilder parseExpressionContext(CQLSearchParser.ExpressionContext expressionContext) {
+    private Query parseExpressionContext(CQLSearchParser.ExpressionContext expressionContext) {
         if (expressionContext instanceof CQLSearchParser.LrExprContext) {
             return parseLrExprContext((CQLSearchParser.LrExprContext) expressionContext);
         } else if (expressionContext instanceof CQLSearchParser.BoolExprContext) {
@@ -53,34 +56,34 @@ public class EsCql2DslQueryParser extends AbstractEsQueryParser {
         }
     }
 
-    private QueryBuilder parseLrExprContext(CQLSearchParser.LrExprContext lrExprContext) {
+    private Query parseLrExprContext(CQLSearchParser.LrExprContext lrExprContext) {
         CQLSearchParser.ExpressionContext expression = lrExprContext.expression();
         return parseExpressionContext(expression);
     }
 
-    private QueryBuilder parseNotExprContext(CQLSearchParser.NotExprContext notExprContext) {
+    private Query parseNotExprContext(CQLSearchParser.NotExprContext notExprContext) {
         CQLSearchParser.ExpressionContext expression = notExprContext.expression();
-        return QueryBuilders.boolQuery().mustNot(parseExpressionContext(expression));
+        return Query.of(q -> q.bool(b -> b.mustNot(parseExpressionContext(expression))));
     }
 
-    private BoolQueryBuilder parseBoolExprContext(CQLSearchParser.BoolExprContext boolExprContext) {
+    private Query parseBoolExprContext(CQLSearchParser.BoolExprContext boolExprContext) {
         CQLSearchParser.ExpressionContext leftExpr = boolExprContext.expression(0);
         CQLSearchParser.ExpressionContext rightExpr = boolExprContext.expression(1);
 
-        QueryBuilder leftQuery = parseExpressionContext(leftExpr);
-        QueryBuilder rightQuery = parseExpressionContext(rightExpr);
+        Query leftQuery = parseExpressionContext(leftExpr);
+        Query rightQuery = parseExpressionContext(rightExpr);
         if (isNot(boolExprContext)) {
-            return QueryBuilders.boolQuery().must(leftQuery).mustNot(rightQuery);
+            return Query.of(q -> q.bool(b -> b.must(leftQuery).mustNot(rightQuery)));
         } else if (isOr(boolExprContext)) {
-            return QueryBuilders.boolQuery().should(leftQuery).should(rightQuery);
+            return Query.of(q -> q.bool(b -> b.should(leftQuery).should(rightQuery)));
         } else if (isAnd(boolExprContext)) {
-            return QueryBuilders.boolQuery().must(leftQuery).must(rightQuery);
+            return Query.of(q -> q.bool(b -> b.must(leftQuery).must(rightQuery)));
         } else {
             throw new IllegalArgumentException(String.format("unsupported logic operator[%s]!", boolExprContext.operator.getText()));
         }
     }
 
-    private QueryBuilder parseEqExprContext(CQLSearchParser.EqExprContext eqExprContext) {
+    private Query parseEqExprContext(CQLSearchParser.EqExprContext eqExprContext) {
         String field, op = eqExprContext.operator.getText();
         Object value;
         //左半边的字段值
@@ -109,60 +112,63 @@ public class EsCql2DslQueryParser extends AbstractEsQueryParser {
         return parseFieldValue(field, op.trim(), value);
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private QueryBuilder parseFieldValue(String field, String op, Object value) {
+    @SuppressWarnings({"unchecked"})
+    private Query parseFieldValue(String field, String op, Object value) {
         String fieldKeyword = field + ".keyword";
         String valueStr = StringUtil.valueOf(value);
         boolean isStar = StringUtil.STAR.equals(StringUtil.trim(valueStr));
         switch (op) {
             case "!=":
                 if (isStar) {
-                    return QueryBuilders.boolQuery().mustNot(QueryBuilders.existsQuery(field));
+                    return Query.of(q -> q.bool(b -> b.mustNot(mn -> mn.exists(e -> e.field(field)))));
                 } else {
                     if (value instanceof List) {
-                        return QueryBuilders.boolQuery().mustNot(QueryBuilders.termsQuery(fieldKeyword, (List) value));
+                        List<String> stringValues = (List<String>) value;
+                        List<FieldValue> fieldValues = stringValues.stream().map(FieldValue::of).collect(Collectors.toList());
+                        return Query.of(q -> q.bool(b -> b.mustNot(mn -> mn.terms(t -> t.field(fieldKeyword).terms(trms -> trms.value(fieldValues))))));
                     }
-                    return QueryBuilders.boolQuery().mustNot(QueryBuilders.termQuery(fieldKeyword, valueStr));
+                    return Query.of(q -> q.bool(b -> b.mustNot(mn -> mn.term(t -> t.field(fieldKeyword).value(FieldValue.of(valueStr))))));
                 }
             case "=":
                 if (isStar) {
-                    return QueryBuilders.existsQuery(field);
+                    return Query.of(q -> q.exists(e -> e.field(field)));
                 } else {
                     if (value instanceof List) {
-                        return QueryBuilders.termsQuery(fieldKeyword, (List) value);
+                        List<String> stringValues = (List<String>) value;
+                        List<FieldValue> fieldValues = stringValues.stream().map(FieldValue::of).collect(Collectors.toList());
+                        return Query.of(q -> q.terms(t -> t.field(fieldKeyword).terms(trms -> trms.value(fieldValues))));
                     }
-                    return QueryBuilders.termQuery(fieldKeyword, valueStr);
+                    return Query.of(q -> q.term(t -> t.field(fieldKeyword).value(FieldValue.of(valueStr))));
                 }
             case ">=":
-                return QueryBuilders.rangeQuery(field).gte(value);
+                return Query.of(q -> q.range(r -> r.field(field).gte(JsonData.of(value))));
             case ">":
-                return QueryBuilders.rangeQuery(field).gt(value);
+                return Query.of(q -> q.range(r -> r.field(field).gt(JsonData.of(value))));
             case "<=":
-                return QueryBuilders.rangeQuery(field).lte(value);
+                return Query.of(q -> q.range(r -> r.field(field).lte(JsonData.of(value))));
             case "<":
-                return QueryBuilders.rangeQuery(field).lt(value);
+                return Query.of(q -> q.range(r -> r.field(field).lt(JsonData.of(value))));
             default:
                 if (isStar) {
-                    return QueryBuilders.existsQuery(field);
+                    return Query.of(q -> q.exists(e -> e.field(field)));
                 } else {
-                    Function<String, QueryBuilder> queryBuilderFunction = s -> {
+                    Function<String, Query> queryBuilderFunction = s -> {
                         String orValue = StringUtil.valueOf(s);
                         if (orValue.contains(StringUtil.STAR)) {
-                            return QueryBuilders.wildcardQuery(field, orValue);
+                            return Query.of(q -> q.wildcard(w -> w.field(field).value(orValue)));
                         } else if (StringUtil.isNotBlank(orValue) && orValue.length() > 2 && ((orValue.startsWith("\"") && orValue.endsWith("\"")) || (orValue.startsWith("'") && orValue.endsWith("'")))) {
-                            return QueryBuilders.matchPhraseQuery(field, orValue.substring(1, orValue.length() - 1));
+                            return Query.of(q -> q.matchPhrase(mp -> mp.field(field).query(orValue.substring(1, orValue.length() - 1))));
                         } else if (StringUtil.isBlank(orValue)) {
-                            return QueryBuilders.matchQuery(field, StringUtil.EMPTY);
+                            return Query.of(q -> q.match(m -> m.field(field).query("")));
                         } else {
-                            return QueryBuilders.matchQuery(field, orValue);
+                            return Query.of(q -> q.match(m -> m.field(field).query(orValue)));
                         }
                     };
                     if (value instanceof List) {
-                        BoolQueryBuilder orQuery = QueryBuilders.boolQuery();
-                        ((List) value).forEach(x -> {
-                            orQuery.should(queryBuilderFunction.apply(StringUtil.valueOf(x)));
-                        });
-                        return orQuery;
+                        List<Query> shouldQueries = ((List<String>) value).stream()
+                                .map(x -> queryBuilderFunction.apply(StringUtil.valueOf(x)))
+                                .collect(Collectors.toList());
+                        return Query.of(q -> q.bool(b -> b.should(shouldQueries)));
                     } else {
                         return queryBuilderFunction.apply(valueStr);
                     }
@@ -170,37 +176,18 @@ public class EsCql2DslQueryParser extends AbstractEsQueryParser {
         }
     }
 
-    private List<String> parseOrItemExprContext(CQLSearchParser.OrItemExprContext orItemExprContext) {
-        List<String> items = new ArrayList<>();
-        items.add(orItemExprContext.item.getText());
-        if (orItemExprContext.orItems() != null && !orItemExprContext.orItems().isEmpty()) {
-            orItemExprContext.orItems().forEach(x -> items.add(x.item.getText()));
-        }
-        if (items.size() > 1 && items.contains("*")) {
-            throw new IllegalArgumentException(String.format("'*' can not mix with other value like [%s].", Arrays.toString(items.toArray())));
-        }
-        return items;
-    }
-
-    private QueryBuilder parseIdentityContext(CQLSearchParser.IdentityExprContext identityExprContext) {
+    private Query parseIdentityContext(CQLSearchParser.IdentityExprContext identityExprContext) {
         return parseFieldValue(getGlobalFieldName(), StringUtil.COLON, identityExprContext.getText());
-    }
-
-    private boolean isAnd(CQLSearchParser.BoolExprContext boolExprContext) {
-        return boolExprContext.BOOLAND() != null || boolExprContext.AND() != null;
-    }
-
-    private boolean isOr(CQLSearchParser.BoolExprContext boolExprContext) {
-        return boolExprContext.BOOLOR() != null || boolExprContext.OR() != null;
-    }
-
-    private boolean isNot(CQLSearchParser.BoolExprContext boolExprContext) {
-        return boolExprContext.NOT() != null;
     }
 
     @Override
     public LanguageType language() {
         return LanguageType.CQL;
+    }
+
+    @Override
+    public ParserType parserType() {
+        return ParserType.ES8;
     }
 
 }
